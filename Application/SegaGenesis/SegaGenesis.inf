@@ -1,0 +1,131 @@
+## @file
+# Файл описания модуля приложения SegaGenesis
+#
+# Основное UEFI-приложение для запуска эмулятора Sega Genesis (Genesis Plus GX).
+# Freestanding сборка без StdLib - используем только нативные библиотеки EDK II.
+#
+# Copyright (c) 2026. Все права защищены.
+#
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = SegaGenesis
+  FILE_GUID                      = 1A2B3C4D-5E6F-7A8B-9C0D-1E2F3A4B5C6D
+  MODULE_TYPE                    = UEFI_APPLICATION
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = UefiMain
+
+[Sources]
+  ../../UefiGlue/UefiGlueInit.c
+  ../../UefiGlue/UefiGlueRom.c
+  ../../UefiGlue/UefiGlueVideo.c
+  ../../UefiGlue/UefiGlueMath.c
+  ../../UefiGlue/UefiGlueGuids.c
+  ../../UefiGlue/UefiGlueAudio.c
+  SegaMain.c
+  GameRamWatch.c
+
+  #
+  # EmulatorCore - ядро эмулятора Genesis Plus GX
+  #
+  ../../EmulatorCore/system.c
+  ../../EmulatorCore/genesis.c
+  ../../EmulatorCore/vdp_ctrl.c
+  ../../EmulatorCore/vdp_render.c
+  ../../EmulatorCore/loadrom.c
+  ../../EmulatorCore/io_ctrl.c
+  ../../EmulatorCore/state.c
+  ../../EmulatorCore/mem68k.c
+  ../../EmulatorCore/memz80.c
+  ../../EmulatorCore/membnk.c
+
+  #
+  # M68K CPU
+  #
+  ../../EmulatorCore/m68k/m68kcpu.c
+
+  #
+  # Z80 CPU
+  #
+  ../../EmulatorCore/z80/z80.c
+
+  #
+  # Звук
+  #
+  ../../EmulatorCore/sound/sound.c
+  ../../EmulatorCore/sound/psg.c
+  ../../EmulatorCore/sound/ym2612.c
+  ../../EmulatorCore/sound/blip_buf.c
+
+  #
+  # NTSC фильтры
+  #
+  ../../EmulatorCore/ntsc/md_ntsc.c
+
+  #
+  # Ввод
+  #
+  ../../EmulatorCore/input_hw/input.c
+  ../../EmulatorCore/input_hw/gamepad.c
+
+  #
+  # Картриджи
+  #
+  ../../EmulatorCore/cart_hw/md_cart.c
+  ../../EmulatorCore/cart_hw/sram.c
+  ../../EmulatorCore/cart_hw/ggenie.c
+  ../../EmulatorCore/cart_hw/areplay.c
+  ../../EmulatorCore/cart_hw/flash_cfi.c
+  ../../EmulatorCore/cart_hw/eeprom_i2c.c
+  ../../EmulatorCore/cart_hw/eeprom_spi.c
+  ../../EmulatorCore/cart_hw/eeprom_93c.c
+
+  #
+  # Заглушки удалённых модулей (CD/SVP/SMS/S68K/Sound extras)
+  #
+  ../../EmulatorCore/stub_removed.c
+
+[Sources.X64]
+  #
+  # Non-temporal memcpy для записи в GOP framebuffer без Write-Combining
+  #
+  X64/NtCopy.nasm
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  SegaEfiPkg/SegaEfiPkg.dec
+
+[Protocols]
+  gEfiGraphicsOutputProtocolGuid
+  gEfiSimpleFileSystemProtocolGuid
+  gEfiLoadedImageProtocolGuid
+
+  gEfiPciIoProtocolGuid
+
+  gEfiGenericAudioIoProtocolGuid
+
+  gEfiSimpleTextInProtocolGuid
+  gEfiSimpleTextInputExProtocolGuid
+
+[LibraryClasses]
+  UefiApplicationEntryPoint
+  UefiLib
+  UefiBootServicesTableLib
+  UefiRuntimeServicesTableLib
+  BaseLib
+  BaseMemoryLib
+  MemoryAllocationLib
+  CacheMaintenanceLib
+  IoLib
+  PrintLib
+
+  DxeServicesTableLib
+
+[BuildOptions]
+  MSFT:*_*_*_CC_FLAGS    = /I$(PKG_DIR)/Include/stubs /I$(PKG_DIR)/Include /I$(PKG_DIR)/EmulatorCore /I$(PKG_DIR)/EmulatorCore/cd_hw /I$(PKG_DIR)/EmulatorCore/cart_hw /I$(PKG_DIR)/EmulatorCore/cart_hw/svp /DLSB_FIRST /D__UEFI__ /DUSE_32BPP_RENDERING /DUSE_DYNAMIC_ALLOC /U_WIN32 /UWIN32 /WX- /wd4005 /wd4018 /wd4024 /wd4028 /wd4047 /wd4132 /wd4142 /wd4146 /wd4189 /wd4201 /wd4218 /wd4244 /wd4245 /wd4267 /wd4309 /wd4389 /wd4431 /wd4456 /wd4457 /wd4459 /wd4706 /wd4996 /O2
+  #/Os
+  MSFT:*_*_*_DLINK_FLAGS = /OPT:REF /OPT:ICF /NODEFAULTLIB /STACK:0x100000 /HEAP:0x200000
+  GCC:*_*_*_CC_FLAGS     = -I$(PKG_DIR)/Include/stubs -I$(PKG_DIR)/Include -I$(PKG_DIR)/EmulatorCore -I$(PKG_DIR)/EmulatorCore/cd_hw -I$(PKG_DIR)/EmulatorCore/cart_hw -I$(PKG_DIR)/EmulatorCore/cart_hw/svp -std=c99 -DLSB_FIRST -D__UEFI__ -DUSE_32BPP_RENDERING -DUSE_DYNAMIC_ALLOC -U_WIN32 -UWIN32 -Wno-error -Wno-format -Wno-unused-function -Wno-incompatible-pointer-types -Wno-nonnull-compare -Wno-address-of-packed-member -Wno-sign-compare -Wno-pointer-sign -ffreestanding -fno-builtin -O2 
+  #-Os

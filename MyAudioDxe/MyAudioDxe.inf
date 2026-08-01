@@ -1,0 +1,49 @@
+## @file
+#  MyAudioDxe - Universal UEFI HDA Audio Driver
+#
+#  Полностью независимый от Apple/OpenCore драйвер
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = MyAudioDxe
+  FILE_GUID                      = 8F3C2A1B-9D4E-4F2C-A3B7-1E5D6C8A9F2B
+  MODULE_TYPE                    = UEFI_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = MyAudioDriverEntryPoint
+
+[Sources]
+  MyAudioDriver.c
+  HdaCodecParser.c
+  GenericAudioProtocol.c
+  MyAudioDxe.h
+  GenericAudioProtocol.h
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  SegaEfiPkg/SegaEfiPkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  UefiLib
+  BaseLib
+  BaseMemoryLib
+  MemoryAllocationLib
+  DebugLib
+  PrintLib
+  DevicePathLib
+
+[Protocols]
+  gEfiDriverBindingProtocolGuid                 ## PRODUCES
+  gEfiPciIoProtocolGuid                         ## CONSUMES
+  gEfiDevicePathProtocolGuid                    ## CONSUMES
+  gEfiGenericAudioIoProtocolGuid                ## PRODUCES
+
+[Guids]
+
+[Pcd]
+
+[Depex]
+  TRUE

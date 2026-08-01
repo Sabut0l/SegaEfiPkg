@@ -1,0 +1,49 @@
+## @file
+# Декларация пакета SegaEfiPkg для портирования эмулятора Sega Genesis в UEFI
+#
+# Этот пакет содержит UEFI-приложение для запуска эмулятора Genesis Plus GX
+# в среде загрузки UEFI. Обеспечивает интеграцию с GOP (графика), 
+# протоколами ввода и файловой системой UEFI.
+#
+# Copyright (c) 2026. Все права защищены.
+#
+##
+
+[Defines]
+  DEC_SPECIFICATION              = 0x00010005
+  PACKAGE_NAME                   = SegaEfiPkg
+  PACKAGE_GUID                   = 8F7D9A12-4B3C-4E5D-A789-1234567890AB
+  PACKAGE_VERSION                = 1.0
+
+[Includes]
+  Include/stubs
+  Include
+  EmulatorCore
+  EmulatorCore/cd_hw
+  EmulatorCore/cart_hw
+  EmulatorCore/cart_hw/svp
+  EmulatorCore/sound
+  UefiGlue
+
+[LibraryClasses]
+
+[Guids]
+  # GUID пакета
+  gSegaEfiPkgTokenSpaceGuid = { 0x8f7d9a12, 0x4b3c, 0x4e5d, { 0xa7, 0x89, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab }}
+
+[Protocols]
+  ## Generic Audio I/O Protocol
+  # {6C9F84B1-2E4A-4D3F-9A7C-3B8E5F1D2A4C}
+  gEfiGenericAudioIoProtocolGuid = { 0x6c9f84b1, 0x2e4a, 0x4d3f, { 0x9a, 0x7c, 0x3b, 0x8e, 0x5f, 0x1d, 0x2a, 0x4c }}
+
+[PcdsFixedAtBuild]
+  # Начальная ширина экрана (можно переопределить)
+  gSegaEfiPkgTokenSpaceGuid.PcdVideoWidth|640|UINT32|0x00000001
+  
+  # Начальная высота экрана
+  gSegaEfiPkgTokenSpaceGuid.PcdVideoHeight|448|UINT32|0x00000002
+  
+  # Целевая частота кадров (Hz)
+  gSegaEfiPkgTokenSpaceGuid.PcdTargetFps|60|UINT32|0x00000003
+
+[PcdsDynamic]
