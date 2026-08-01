@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SegaEFI — Sega Mega Drive прямо из BIOS</title>
+<meta name="description" content="SegaEFI — эмулятор Sega Mega Drive / Genesis, работающий без операционной системы, прямо в UEFI-прошивке компьютера.">
+<meta name="theme-color" content="#0F0F13">
+<meta name="color-scheme" content="dark">
+<meta property="og:title" content="SegaEFI — Sega Mega Drive прямо из BIOS">
+<meta property="og:description" content="Эмулятор Mega Drive / Genesis, запускающийся прямо в UEFI — без операционной системы.">
+<meta property="og:type" content="website">
+<link rel="icon" type="image/svg+xml" href="assets/sega_logo.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0F0F13;
+  --surface:#17171D;
+  --surface2:#1E1E26;
+  --border:rgba(255,255,255,.14);
+  --border-strong:rgba(255,255,255,.25);
+  --text:#FFFFFF;
+  --muted:rgba(255,255,255,.65);
+  --red:#DC0000;
+  --red-bright:#FF4B3E;
+  --red-soft:rgba(220,0,0,.12);
+  --green:#72BC8F;
+  --blue:#5E9FE8;
+  --gold:#EAC26B;
+  --radius:12px;
+  --pixel:'Press Start 2P','Courier New',ui-monospace,SFMono-Regular,Consolas,monospace;
+  --sans:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+  --shadow:0 24px 80px rgba(0,0,0,.34);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:92px}
+::selection{background:rgba(255,75,62,.42);color:#fff}
+:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+button,a{-webkit-tap-highlight-color:transparent}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.skip-link{position:fixed;left:16px;top:-64px;z-index:1000;background:#fff;color:#111;padding:10px 14px;border-radius:8px;font-weight:800;transition:top .2s}
+.skip-link:focus{top:12px}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--sans);
+  font-size:16px;line-height:1.55;
+  background-image:
+    linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);
+  background-size:32px 32px;
+  overflow-x:hidden;
+}
+body::before{content:'';position:fixed;inset:-30vh -20vw;z-index:-2;pointer-events:none;background:radial-gradient(circle at 18% 8%,rgba(220,0,0,.11),transparent 26%),radial-gradient(circle at 82% 42%,rgba(94,159,232,.07),transparent 26%)}
+.wrap{max-width:1060px;margin:0 auto;padding:0 24px}
+
+/* ============ NAV ============ */
+header{
+  position:sticky;top:0;z-index:50;
+  background:rgba(15,15,19,.82);
+  backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+}
+.scroll-progress{position:absolute;left:0;bottom:-1px;width:0;height:2px;background:linear-gradient(90deg,var(--red),var(--gold));box-shadow:0 0 12px var(--red-bright);transition:width .08s linear}
+.nav{display:flex;align-items:center;gap:16px;min-height:64px;flex-wrap:wrap;padding:8px 24px;max-width:1060px;margin:0 auto}
+.brand{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text)}
+.brand img{width:34px;height:39px;display:block}
+.brand b{font-family:var(--pixel);font-size:13px;letter-spacing:1px}
+.brand b span{color:var(--red-bright)}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
+.tabbtn{
+  font-family:var(--sans);font-weight:600;font-size:14px;
+  color:var(--muted);background:none;border:none;cursor:pointer;
+  padding:9px 13px;border-radius:8px;transition:color .15s,background .15s;
+}
+.tabbtn:hover{color:var(--text);background:rgba(255,255,255,.06)}
+.tabbtn.active{color:#fff;background:linear-gradient(135deg,var(--red),#ff3024);box-shadow:0 6px 22px rgba(220,0,0,.28),0 0 0 1px rgba(255,255,255,.15) inset}
+.langbox{display:flex;border:1px solid var(--border-strong);border-radius:8px;overflow:hidden;margin-left:8px}
+.langbtn{font-family:var(--pixel);font-size:10px;padding:9px 11px;background:none;border:none;color:var(--muted);cursor:pointer}
+.langbtn.active{background:var(--red);color:#fff}
+
+/* ============ COMMON ============ */
+main{min-height:70vh}
+section.tab{display:none;padding:48px 0 64px}
+section.tab.visible{display:block;animation:fadein .35s ease}
+section.tab[hidden]{display:none!important}
+@keyframes fadein{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+h1{font-family:var(--pixel);font-size:clamp(22px,4.2vw,40px);line-height:1.35;letter-spacing:.5px}
+h2{font-family:var(--pixel);font-size:clamp(15px,2.2vw,21px);line-height:1.5;margin-bottom:24px}
+h2 .tag{color:var(--red-bright)}
+h3{font-size:17px;font-weight:800;margin-bottom:8px}
+p.lead{font-size:18px;color:var(--muted);max-width:720px}
+.muted{color:var(--muted)}
+.accent{color:var(--red-bright)}
+.section-gap{margin-top:56px}
+.kicker{
+  font-family:var(--pixel);font-size:10px;color:var(--red-bright);
+  letter-spacing:2px;text-transform:uppercase;margin-bottom:14px;display:block;
+}
+
+/* ============ HERO ============ */
+.hero{display:grid;grid-template-columns:1.25fr .75fr;gap:48px;align-items:center;padding:48px 40px 34px;position:relative;border:1px solid var(--border);border-radius:22px;overflow:hidden;isolation:isolate;margin-top:10px;box-shadow:var(--shadow)}
+.hero-bg{position:absolute;inset:0;z-index:0;pointer-events:none}
+.hero-bg video{width:100%;height:100%;object-fit:cover;image-rendering:pixelated;opacity:.34;filter:saturate(1.1) contrast(1.05)}
+.hero-bg::after{
+  content:'';position:absolute;inset:0;
+  background:
+    linear-gradient(90deg,rgba(15,15,19,.9) 0%,rgba(15,15,19,.62) 46%,rgba(15,15,19,.28) 100%),
+    linear-gradient(180deg,rgba(15,15,19,.55),transparent 30%,transparent 70%,rgba(15,15,19,.8)),
+    repeating-linear-gradient(0deg,rgba(0,0,0,.28) 0 1px,transparent 1px 4px);
+}
+.hero-text,.logo-stage{position:relative;z-index:1}
+.hero-controls{position:absolute;right:14px;top:14px;z-index:3;display:flex;align-items:center;gap:8px}
+.game-chip,.video-toggle{border:1px solid rgba(255,255,255,.2);background:rgba(10,10,14,.72);backdrop-filter:blur(10px);color:#fff;border-radius:999px;min-height:34px}
+.game-chip{display:flex;align-items:center;gap:8px;padding:7px 12px;font-size:11px;font-weight:800;letter-spacing:.04em}
+.game-chip::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green)}
+.video-toggle{width:34px;cursor:pointer;font-size:14px;transition:transform .15s,background .15s}
+.video-toggle:hover{transform:scale(1.07);background:rgba(220,0,0,.75)}
+.hero-pills{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}
+.hero-pill{padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:rgba(15,15,19,.52);font-size:12px;font-weight:700;color:rgba(255,255,255,.8)}
+@media (prefers-reduced-motion:reduce){.hero-bg{display:none}}
+.hero-text p{margin-top:20px}
+.hero-cta{display:flex;gap:12px;margin-top:30px;flex-wrap:wrap}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;font-weight:800;font-size:15px;
+  padding:13px 22px;border-radius:10px;cursor:pointer;border:1px solid transparent;
+  transition:transform .15s,background .15s,box-shadow .15s;
+}
+.btn:hover{transform:translateY(-2px)}
+.btn-red{background:linear-gradient(135deg,var(--red),#ff3024);color:#fff;box-shadow:0 10px 26px rgba(220,0,0,.24)}
+.btn-red:hover{background:#b80000}
+.btn-ghost{border-color:var(--border-strong);color:var(--text);background:transparent}
+.btn-ghost:hover{background:rgba(255,255,255,.07)}
+.logo-stage{
+  position:relative;display:flex;align-items:center;justify-content:center;
+  padding:34px;border:1px solid var(--border);border-radius:16px;
+  background:radial-gradient(circle at 50% 42%,rgba(220,0,0,.22),transparent 62%),rgba(23,23,29,.82);backdrop-filter:blur(8px);
+  overflow:hidden;
+}
+.logo-stage::after{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,.045) 0 1px,transparent 1px 4px);
+}
+.logo-stage img{width:min(64%,230px);height:auto;filter:drop-shadow(0 14px 34px rgba(220,0,0,.35));animation:floaty 5s ease-in-out infinite}
+@keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+@media (prefers-reduced-motion:reduce){.logo-stage img{animation:none}}
+.stat-strip{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:52px;
+}
+.stat{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:18px 16px;text-align:center;
+}
+.stat b{font-family:var(--pixel);font-size:16px;color:var(--red-bright);display:block;margin-bottom:8px}
+.stat span{font-size:13px;color:var(--muted)}
+
+/* ============ CARDS ============ */
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.cards2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:22px;transition:transform .2s,border-color .2s,box-shadow .2s;
+}
+.card:hover{transform:translateY(-4px);border-color:rgba(255,75,62,.55);box-shadow:0 18px 46px rgba(0,0,0,.24)}
+.card .ico{
+  width:40px;height:40px;border-radius:8px;background:var(--red-soft);
+  display:flex;align-items:center;justify-content:center;font-size:19px;margin-bottom:14px;
+  border:1px solid rgba(220,0,0,.35);
+}
+.card p{font-size:14.5px;color:var(--muted)}
+.card.gold .ico{background:rgba(234,194,107,.12);border-color:rgba(234,194,107,.4)}
+.card.blue .ico{background:rgba(94,159,232,.12);border-color:rgba(94,159,232,.4)}
+.card.green .ico{background:rgba(114,188,143,.12);border-color:rgba(114,188,143,.4)}
+
+/* ============ DIAGRAMS ============ */
+.scheme{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:28px;margin-top:20px;
+}
+.scheme h3{font-family:var(--pixel);font-size:13px;line-height:1.6;margin-bottom:6px}
+.scheme .sub{font-size:14px;color:var(--muted);margin-bottom:22px}
+.flow-v{display:flex;flex-direction:column;align-items:stretch;gap:0}
+.layer{
+  border:2px solid var(--border-strong);border-radius:10px;padding:14px 18px;
+  background:var(--surface2);text-align:center;
+}
+.layer b{display:block;font-size:15px}
+.layer span{font-size:13px;color:var(--muted)}
+.layer.hot{border-color:var(--red);background:linear-gradient(180deg,rgba(220,0,0,.16),rgba(220,0,0,.05))}
+.layer.cool{border-color:rgba(94,159,232,.55)}
+.layer.warm{border-color:rgba(234,194,107,.55)}
+.layer.ok{border-color:rgba(114,188,143,.55)}
+.varrow{
+  text-align:center;font-family:var(--pixel);font-size:12px;color:var(--red-bright);
+  padding:7px 0;line-height:1;
+}
+.varrow small{display:block;font-family:var(--sans);font-size:12px;color:var(--muted);margin-top:5px}
+.flow-h{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;justify-content:center}
+.node{
+  flex:1 1 130px;min-width:120px;max-width:180px;
+  border:2px solid var(--border-strong);border-radius:10px;padding:12px 10px;
+  background:var(--surface2);text-align:center;margin:6px 0;
+}
+.node b{display:block;font-size:13.5px;line-height:1.35}
+.node span{font-size:11.5px;color:var(--muted);display:block;margin-top:5px;line-height:1.4}
+.node .num{
+  font-family:var(--pixel);font-size:9px;color:var(--red-bright);display:block;margin-bottom:7px;
+}
+.harrow{
+  align-self:center;font-family:var(--pixel);color:var(--red-bright);font-size:13px;
+  padding:0 8px;flex:0 0 auto;
+}
+.legend{margin-top:20px;border-top:1px dashed var(--border);padding-top:16px}
+.legend li{font-size:14px;color:var(--muted);margin:7px 0 7px 4px;list-style:none;padding-left:26px;position:relative}
+.legend li::before{
+  content:attr(data-n);position:absolute;left:0;top:2px;
+  font-family:var(--pixel);font-size:9px;color:var(--red-bright);
+}
+
+/* ============ STEPS / QUICKSTART ============ */
+.steps{counter-reset:st;display:flex;flex-direction:column;gap:14px;max-width:760px}
+.step{
+  counter-increment:st;display:flex;gap:18px;background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;
+}
+.step::before{
+  content:counter(st);font-family:var(--pixel);font-size:14px;color:#fff;
+  background:var(--red);border-radius:8px;width:40px;height:40px;flex:0 0 40px;
+  display:flex;align-items:center;justify-content:center;
+}
+.step p{font-size:14.5px;color:var(--muted);margin-top:4px}
+code{
+  font-family:Menlo,Consolas,monospace;font-size:13px;background:rgba(255,255,255,.09);
+  padding:2px 7px;border-radius:6px;color:#ffd9d6;
+}
+kbd{
+  font-family:var(--pixel);font-size:9px;background:var(--surface2);
+  border:1px solid var(--border-strong);border-bottom-width:3px;border-radius:6px;
+  padding:6px 8px;display:inline-block;min-width:30px;text-align:center;
+}
+table.keys{width:100%;border-collapse:collapse;margin-top:8px}
+table.keys td{padding:11px 10px;border-bottom:1px solid var(--border);font-size:14.5px}
+table.keys td:first-child{width:220px}
+table.keys td:last-child{color:var(--muted)}
+.callout{
+  border:1px solid rgba(234,194,107,.45);background:rgba(234,194,107,.08);
+  border-radius:var(--radius);padding:16px 20px;font-size:14.5px;color:var(--muted);margin-top:22px;
+}
+.callout b{color:var(--gold)}
+
+footer{border-top:1px solid var(--border);padding:30px 0 40px;margin-top:20px}
+footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center}
+footer p{font-size:13px;color:var(--muted)}
+footer .pix{font-family:var(--pixel);font-size:9px;color:var(--muted)}
+.copy-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+.copy-btn{border:1px solid var(--border-strong);background:var(--surface2);color:#fff;border-radius:8px;padding:7px 10px;cursor:pointer;font-size:12px;font-weight:800}
+.copy-btn:hover{border-color:var(--red-bright)}
+.to-top{position:fixed;right:22px;bottom:22px;z-index:40;width:44px;height:44px;border-radius:50%;border:1px solid var(--border-strong);background:rgba(23,23,29,.9);backdrop-filter:blur(10px);color:#fff;cursor:pointer;opacity:0;transform:translateY(12px);pointer-events:none;transition:.2s;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+.to-top.show{opacity:1;transform:none;pointer-events:auto}
+.status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);margin-right:7px}
+
+/* ============ RESPONSIVE ============ */
+@media (max-width:860px){
+  .hero{grid-template-columns:1fr;gap:32px;padding:28px 22px 22px}
+  .hero-bg video{opacity:.2}
+  .hero-controls{top:10px;right:10px}
+  .game-chip{display:none}
+  .hero-pills{margin-top:16px}
+  .logo-stage{max-width:340px;margin:0 auto}
+  .cards,.cards2{grid-template-columns:1fr}
+  .stat-strip{grid-template-columns:repeat(2,1fr)}
+  .tabs{margin-left:0;width:100%;order:3;overflow-x:auto;flex-wrap:nowrap;padding-bottom:3px;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tabbtn{white-space:nowrap}
+  .langbox{margin-left:auto}
+  .flow-h{flex-direction:column;align-items:stretch}
+  .node{max-width:none}
+  .harrow{transform:rotate(90deg);padding:6px 0;align-self:center}
+  table.keys td:first-child{width:auto}
+}
+@media (max-width:520px){
+  .wrap{padding-left:16px;padding-right:16px}
+  section.tab{padding-top:34px}
+  .nav{padding-left:16px;padding-right:16px}
+  .hero{padding:44px 20px 22px;border-radius:18px}
+  h1{font-size:24px}
+  p.lead{font-size:16px}
+  .hero-cta .btn{width:100%}
+  .stat-strip{gap:8px;margin-top:24px}
+  .stat{padding:14px 8px}
+  .stat b{font-size:13px}
+  .logo-stage{padding:25px}
+  .scheme{padding:18px 14px}
+  .step{padding:16px 14px;gap:12px}
+  .step::before{width:34px;height:34px;flex-basis:34px}
+  table.keys td{display:block;width:100%!important;padding:8px 4px}
+  table.keys td:first-child{border-bottom:0;padding-top:14px}
+  .to-top{right:14px;bottom:14px}
+}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main" data-i18n="skip">Перейти к содержанию</a>
+<header>
+  <div class="scroll-progress" id="scroll-progress" aria-hidden="true"></div>
+  <div class="nav">
+    <a class="brand" href="#home" onclick="showTab('home');return false;">
+      <img src="assets/sega_logo.svg" alt="SegaEFI logo">
+      <b>SEGA<span>·EFI</span></b>
+    </a>
+    <nav class="tabs" id="tabbar" aria-label="Разделы сайта" role="tablist">
+      <button class="tabbtn active" type="button" role="tab" aria-selected="true" data-tab="home" data-i18n="nav_home">Главная</button>
+      <button class="tabbtn" type="button" role="tab" aria-selected="false" data-tab="about" data-i18n="nav_about">О проекте</button>
+      <button class="tabbtn" type="button" role="tab" aria-selected="false" data-tab="features" data-i18n="nav_features">Возможности</button>
+      <button class="tabbtn" type="button" role="tab" aria-selected="false" data-tab="how" data-i18n="nav_how">Как работает</button>
+      <button class="tabbtn" type="button" role="tab" aria-selected="false" data-tab="start" data-i18n="nav_start">Быстрый старт</button>
+    </nav>
+    <div class="langbox" aria-label="Language">
+      <button class="langbtn active" type="button" aria-pressed="true" data-lang="ru">RU</button>
+      <button class="langbtn" type="button" aria-pressed="false" data-lang="en">EN</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap" id="main">
+
+<!-- ================= HOME ================= -->
+<section class="tab visible" id="tab-home" role="tabpanel">
+  <div class="hero">
+    <div class="hero-bg" aria-hidden="true"><video autoplay muted loop playsinline preload="metadata" poster="assets/gameplay-poster.webp"><source src="assets/gameplay.webm" type="video/webm"><source src="assets/gameplay.mp4" type="video/mp4"></video></div>
+    <div class="hero-controls"><span class="game-chip" id="game-label">THE LION KING · LIVE</span><button class="video-toggle" type="button" id="video-toggle" aria-label="Приостановить фон" title="Приостановить фон">Ⅱ</button></div>
+    <div class="hero-text">
+      <span class="kicker" data-i18n="hero_kicker">UEFI · РЕТРО · V2.2</span>
+      <h1 data-i18n="hero_title">Консоль SEGA внутри вашего BIOS</h1>
+      <p class="lead" data-i18n="hero_lead">SegaEFI — это эмулятор Sega Mega Drive / Genesis, который запускается до загрузки операционной системы. Никакого Windows или Linux — только компьютер, флешка и игра.</p>
+      <div class="hero-pills" aria-label="Ключевые свойства"><span class="hero-pill">⚡ Bare metal</span><span class="hero-pill">◈ UEFI x64</span><span class="hero-pill">♪ Intel HDA</span></div>
+      <div class="hero-cta">
+        <a class="btn btn-red" href="#how" onclick="showTab('how');return false;" data-i18n="hero_btn1">Как это работает →</a>
+        <a class="btn btn-ghost" href="#start" onclick="showTab('start');return false;" data-i18n="hero_btn2">Запустить у себя</a>
+      </div>
+    </div>
+    <div class="logo-stage">
+      <img src="assets/sega_logo.svg" alt="SegaEFI cube logo">
+    </div>
+  </div>
+
+  <div class="stat-strip">
+    <div class="stat"><b>0</b><span data-i18n="stat_os">операционных систем</span></div>
+    <div class="stat"><b>60 FPS</b><span data-i18n="stat_fps">плавная картинка и звук</span></div>
+    <div class="stat"><b>2 CPU</b><span data-i18n="stat_cpu">эмулируемые процессора: M68K + Z80</span></div>
+    <div class="stat"><b data-i18n="stat_boot_num">&lt; 5 сек</b><span data-i18n="stat_boot">от включения до игры</span></div>
+  </div>
+
+  <div class="section-gap">
+    <h2><span class="tag">&gt;</span> <span data-i18n="mission_h">Цель и задача — простыми словами</span></h2>
+    <div class="cards">
+      <div class="card">
+        <div class="ico">🎯</div>
+        <h3 data-i18n="mission1_h">Цель</h3>
+        <p data-i18n="mission1_p">Превратить обычный компьютер в игровую консоль ещё до того, как начнёт грузиться операционная система. Включили питание — и через пару секунд вы уже в игре, как на настоящей приставке из 90-х.</p>
+      </div>
+      <div class="card gold">
+        <div class="ico">🧩</div>
+        <h3 data-i18n="mission2_h">Задача</h3>
+        <p data-i18n="mission2_p">Научить «голое железо» делать всё, что обычно делает ОС: рисовать картинку, играть звук, читать клавиатуру и файлы. Для этого написан даже собственный аудиодрайвер — в прошивке его просто нет.</p>
+      </div>
+      <div class="card blue">
+        <div class="ico">👥</div>
+        <h3 data-i18n="mission3_h">Для кого</h3>
+        <p data-i18n="mission3_p">Для любителей ретро-игр, коллекционеров и инженеров. Первым — мгновенная ностальгия без настроек, вторым — живой пример, как устроено программирование на уровне прошивки.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-gap">
+    <h2><span class="tag">&gt;</span> <span data-i18n="analogy_h">Если совсем просто</span></h2>
+    <div class="cards2">
+      <div class="card">
+        <div class="ico">📼</div>
+        <h3 data-i18n="analogy1_h">Флешка = картридж</h3>
+        <p data-i18n="analogy1_p">Вы записываете программу и игру на обычную USB-флешку и вставляете её в компьютер — точно так же, как в 90-х вставляли картридж в приставку.</p>
+      </div>
+      <div class="card">
+        <div class="ico">⚡</div>
+        <h3 data-i18n="analogy2_h">BIOS = приставка</h3>
+        <p data-i18n="analogy2_p">Внутри каждого современного компьютера есть мини-программа — прошивка UEFI (наследник BIOS). Она умеет запускать приложения ещё до ОС — и SegaEFI как раз такое приложение: оно превращает прошивку в приставку.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ABOUT ================= -->
+<section class="tab" hidden role="tabpanel" id="tab-about">
+  <span class="kicker" data-i18n="about_kicker">ОПИСАНИЕ · ЗНАЧЕНИЕ</span>
+  <h2><span class="tag">&gt;</span> <span data-i18n="about_h">Что такое SegaEFI</span></h2>
+  <p class="lead" data-i18n="about_lead">SegaEFI — это полноценный эмулятор 16-битной консоли Sega Mega Drive / Genesis, собранный как UEFI-приложение: он работает без операционной системы, напрямую поверх прошивки материнской платы. В основе — проверенное временем ядро Genesis Plus GX, перенесённое в среду EDK II без стандартной библиотеки C.</p>
+
+  <div class="section-gap">
+    <div class="cards">
+      <div class="card">
+        <div class="ico">🔬</div>
+        <h3 data-i18n="about1_h">Инженерный эксперимент</h3>
+        <p data-i18n="about1_p">Прошивка не даёт почти ничего: нет звука, нет потоков, нет привычных библиотек. Проект показывает, что даже в таких условиях можно построить систему с графикой 60 FPS и живым звуком.</p>
+      </div>
+      <div class="card gold">
+        <div class="ico">💾</div>
+        <h3 data-i18n="about2_h">Сохранение истории</h3>
+        <p data-i18n="about2_p">Игры 90-х — часть цифровой культуры. SegaEFI даёт им ещё одну среду обитания: любой x64-компьютер с UEFI становится «железной» консолью без лишних прослоек.</p>
+      </div>
+      <div class="card green">
+        <div class="ico">🎓</div>
+        <h3 data-i18n="about3_h">Учебная ценность</h3>
+        <p data-i18n="about3_p">Код проекта — готовое пособие по системному программированию: работа с протоколами UEFI, PCI, DMA, кольцевыми буферами и эмуляцией процессоров.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-gap">
+    <h2><span class="tag">&gt;</span> <span data-i18n="why_hard_h">Почему это сложно</span></h2>
+    <div class="cards2">
+      <div class="card">
+        <div class="ico">🔇</div>
+        <h3 data-i18n="hard1_h">В прошивке нет звука</h3>
+        <p data-i18n="hard1_p">UEFI не умеет играть звук в принципе. Поэтому в составе проекта написан собственный драйвер MyAudioDxe для звуковых карт Intel HD Audio: он сам находит кодек, настраивает его и гонит звук через DMA.</p>
+      </div>
+      <div class="card">
+        <div class="ico">⏱️</div>
+        <h3 data-i18n="hard2_h">Нет ОС — нет помощников</h3>
+        <p data-i18n="hard2_p">Нет планировщика задач, нет виртуальной памяти, нет даже функции sleep. Весь тайминг — 60 кадров и ~800 мс звукового запаса — приложение держит само, синхронизируясь с DMA-позицией звуковой карты.</p>
+      </div>
+    </div>
+    <div class="callout"><b data-i18n="fact_b">Факт:</b> <span data-i18n="fact_p">весь эмулятор — один файл SegaGenesis.efi. Рядом кладётся игра game.gen — и это всё, что нужно для запуска.</span></div>
+  </div>
+</section>
+<!-- ================= FEATURES ================= -->
+<section class="tab" hidden role="tabpanel" id="tab-features">
+  <span class="kicker" data-i18n="feat_kicker">ФУНКЦИОНАЛ · V2.2</span>
+  <h2><span class="tag">&gt;</span> <span data-i18n="feat_h">Что умеет SegaEFI</span></h2>
+  <div class="cards">
+    <div class="card">
+      <div class="ico">🕹️</div>
+      <h3 data-i18n="f1_h">Полная эмуляция консоли</h3>
+      <p data-i18n="f1_p">Ядро Genesis Plus GX: процессоры Motorola 68000 и Zilog Z80, видеочип VDP, звуковые чипы YM2612 и PSG — всё как в оригинальной приставке.</p>
+    </div>
+    <div class="card">
+      <div class="ico">🔊</div>
+      <h3 data-i18n="f2_h">Собственный аудиодрайвер</h3>
+      <p data-i18n="f2_p">MyAudioDxe — драйвер Intel HD Audio, написанный с нуля: парсинг кодека, корректная громкость по возможностям усилителей, вывод сразу на несколько устройств и автовосстановление при сбоях.</p>
+    </div>
+    <div class="card">
+      <div class="ico">💾</div>
+      <h3 data-i18n="f3_h">Быстрые сохранения</h3>
+      <p data-i18n="f3_p">Сохранение и загрузка полного состояния игры (save state) прямо на флешку — можно прерваться в любой момент и продолжить с того же кадра.</p>
+    </div>
+    <div class="card gold">
+      <div class="ico">👁️</div>
+      <h3 data-i18n="f4_h">GameRamWatch</h3>
+      <p data-i18n="f4_p">Модуль наблюдения за памятью игры: распознаёт игру по заголовку ROM и показывает жизни, кольца и здоровье в статусной строке. Готовые профили — для Sonic 1 и Sonic 2.</p>
+    </div>
+    <div class="card blue">
+      <div class="ico">🖥️</div>
+      <h3 data-i18n="f5_h">Аккуратный видеовывод</h3>
+      <p data-i18n="f5_p">Картинка масштабируется под любой монитор через протокол GOP, а раскладка экрана (рамка, статус, поле игры) считается автоматически. При выходе режим консоли восстанавливается.</p>
+    </div>
+    <div class="card green">
+      <div class="ico">🎮</div>
+      <h3 data-i18n="f6_h">Управление с клавиатуры</h3>
+      <p data-i18n="f6_p">Стрелки — крестовина, Z/X/C — кнопки A/B/C, Enter — Start. Поддерживаются оба протокола ввода UEFI — работает даже на капризных ноутбуках.</p>
+    </div>
+  </div>
+
+  <div class="callout" style="margin-top:28px"><b data-i18n="feat_note_b">Новое в V2.2:</b> <span data-i18n="feat_note_p">адаптивный звуковой буфер на 48 кадров (~800 мс) — звук не заикается даже в виртуальных машинах, где аудиотаймер движется рывками; телеметрия ошибок FIFOE/DESE и автоматический ресинк воспроизведения.</span></div>
+</section>
+
+<!-- ================= HOW IT WORKS ================= -->
+<section class="tab" hidden role="tabpanel" id="tab-how">
+  <span class="kicker" data-i18n="how_kicker">РЕАЛИЗАЦИЯ · СХЕМЫ</span>
+  <h2><span class="tag">&gt;</span> <span data-i18n="how_h">Как это работает внутри</span></h2>
+  <p class="lead" data-i18n="how_lead">Три схемы ниже показывают весь путь: общее устройство системы, жизнь одного кадра игры и путь звука от эмулируемого чипа до динамиков.</p>
+
+  <div class="scheme">
+    <h3><span class="accent">01</span> <span data-i18n="s1_h">Архитектура: слои системы</span></h3>
+    <p class="sub" data-i18n="s1_sub">Каждый слой знает только о соседнем — как этажи здания. Игра даже не подозревает, что работает не на настоящей приставке.</p>
+    <div class="flow-v">
+      <div class="layer warm"><b data-i18n="s1_l1">Игра (ROM-файл .gen)</b><span data-i18n="s1_l1s">оригинальный код игры из 90-х — без единого изменения</span></div>
+      <div class="varrow">▼</div>
+      <div class="layer hot"><b data-i18n="s1_l2">EmulatorCore — «виртуальная приставка»</b><span data-i18n="s1_l2s">M68K + Z80 + видеочип VDP + ��вук YM2612/PSG (ядро Genesis Plus GX)</span></div>
+      <div class="varrow">▼</div>
+      <div class="layer cool"><b data-i18n="s1_l3">UefiGlue — слой-переводчик</b><span data-i18n="s1_l3s">переводит запросы эмулятора (нарисовать кадр, сыграть звук, прочитать файл) на язык прошивки</span></div>
+      <div class="varrow">▼</div>
+      <div class="layer ok"><b data-i18n="s1_l4">Протоколы UEFI + драйвер MyAudioDxe</b><span data-i18n="s1_l4s">GOP (экран) · SimpleFileSystem (флешка) · SimpleTextInEx (клавиатура) · GenericAudioIo (звук)</span></div>
+      <div class="varrow">▼</div>
+      <div class="layer"><b data-i18n="s1_l5">Железо</b><span data-i18n="s1_l5s">видеокарта · звуковой контроллер Intel HDA · USB-накопитель · клавиатура</span></div>
+    </div>
+    <ul class="legend">
+      <li data-n="01" data-i18n="s1_e1">Игра исполняется внутри эмулятора инструкция за инструкцией, как на родном процессоре 68000.</li>
+      <li data-n="02" data-i18n="s1_e2">UefiGlue — единственное место, где код «знает» про UEFI. Благодаря этому ядро эмулятора осталось почти нетронутым.</li>
+      <li data-n="03" data-i18n="s1_e3">Звукового протокола в UEFI нет — его предоставляет собственный драйвер MyAudioDxe, который эмулятор сам загружает при старте.</li>
+    </ul>
+  </div>
+
+  <div class="scheme">
+    <h3><span class="accent">02</span> <span data-i18n="s2_h">Жизнь одного кадра (1/60 секунды)</span></h3>
+    <p class="sub" data-i18n="s2_sub">Этот цикл повторяется 60 раз в секунду — быстрее, чем моргает глаз.</p>
+    <div class="flow-h">
+      <div class="node"><span class="num">STEP 1</span><b data-i18n="s2_n1">Ввод</b><span data-i18n="s2_n1s">опрос клавиатуры → кнопки геймпада</span></div>
+      <div class="harrow">▶</div>
+      <div class="node"><span class="num">STEP 2</span><b data-i18n="s2_n2">Эмуляция</b><span data-i18n="s2_n2s">M68K и Z80 исполняют код игры за кадр</span></div>
+      <div class="harrow">▶</div>
+      <div class="node"><span class="num">STEP 3</span><b data-i18n="s2_n3">Картинка</b><span data-i18n="s2_n3s">VDP рисует кадр → GOP выводит на экран</span></div>
+      <div class="harrow">▶</div>
+      <div class="node"><span class="num">STEP 4</span><b data-i18n="s2_n4">Звук</b><span data-i18n="s2_n4s">YM2612 + PSG → сэмплы в кольцевой буфер</span></div>
+      <div class="harrow">▶</div>
+      <div class="node"><span class="num">STEP 5</span><b data-i18n="s2_n5">Синхронизация</b><span data-i18n="s2_n5s">ожидание по DMA-позиции звука → ровные 60 FPS</span></div>
+    </div>
+    <ul class="legend">
+      <li data-n="01" data-i18n="s2_e1">Вместо таймера ОС темп задаёт сама звуковая карта: она забирает сэмплы строго равномерно, и главный цикл подстраивается под неё.</li>
+      <li data-n="02" data-i18n="s2_e2">Раз в несколько кадров GameRamWatch заглядывает в память игры и обновляет статусную строку (жизни, кольца, уровень).</li>
+    </ul>
+  </div>
+
+  <div class="scheme">
+    <h3><span class="accent">03</span> <span data-i18n="s3_h">Путь звука: от чипа 1988 года до ваших динамиков</span></h3>
+    <p class="sub" data-i18n="s3_sub">Самая сложная часть проекта: в UEFI звука нет, поэтому весь тракт построен с нуля.</p>
+    <div class="flow-h">
+      <div class="node"><span class="num">SRC</span><b>YM2612 + PSG</b><span data-i18n="s3_n1s">эмуляция звуковых чипов приставки</span></div>
+      <div class="harrow">▶</div>
+      <div class="node"><span class="num">MIX</span><b data-i18n="s3_n2">Микшер</b><span data-i18n="s3_n2s">blip_buf сводит каналы в PCM-сэмплы 48 кГц</span></div>
+      <div class="harrow">▶</div>
+      <div class="node"><span class="num">RING</span><b data-i18n="s3_n3">Кольцевой буфер</b><span data-i18n="s3_n3s">48 кадров (~800 мс) запаса + адаптивный отступ от DMA</span></div>
+      <div class="harrow">▶</div>
+      <div class="node"><span class="num">DMA</span><b data-i18n="s3_n4">Контроллер HDA</b><span data-i18n="s3_n4s">сам читает буфер из памяти без участия CPU</span></div>
+      <div class="harrow">▶</div>
+      <div class="node"><span class="num">OUT</span><b data-i18n="s3_n5">Кодек → динамики</b><span data-i18n="s3_n5s">MyAudioDxe настраивает усилители и выходы кодека</span></div>
+    </div>
+    <ul class="legend">
+      <li data-n="01" data-i18n="s3_e1">Эмулятор пишет звук «вперёд» относительно позиции чтения DMA. Если запас падает — отступ автоматически увеличивается, и скрежет становится невозможен.</li>
+      <li data-n="02" data-i18n="s3_e2">Драйвер следит за ошибками FIFOE/DESE и при сбое перезапускает воспроизведение за доли секунды — игрок ничего не замечает.</li>
+      <li data-n="03" data-i18n="s3_e3">Звук может идти сразу на несколько устройств (до 4): динамики ноутбука и наушники одновременно.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ================= QUICK START ================= -->
+<section class="tab" hidden role="tabpanel" id="tab-start">
+  <span class="kicker" data-i18n="qs_kicker">ЗАПУСК · 3 ШАГА</span>
+  <h2><span class="tag">&gt;</span> <span data-i18n="qs_h">Быстрый старт</span></h2>
+  <div class="steps">
+    <div class="step"><div><h3 data-i18n="qs1_h">Подготовьте флешку</h3><p data-i18n="qs1_p">Отформатируйте USB-накопитель в FAT32 и скопируйте на него два файла: приложение и игру.</p><div class="copy-row"><code>SegaGenesis.efi</code> + <code>game.gen</code><button class="copy-btn" type="button" data-copy="SegaGenesis.efi + game.gen" data-i18n="copy">Копировать</button></div></div></div>
+    <div class="step"><div><h3 data-i18n="qs2_h">Загрузитесь с флешки</h3><p data-i18n="qs2_p">При включении компьютера откройте загрузочное меню (обычно F12, F11 или Esc) и выберите UEFI Shell или запуск .efi-файла с флешки. Секретных настроек нет — только выключите Secure Boot.</p></div></div>
+    <div class="step"><div><h3 data-i18n="qs3_h">Играйте</h3><p data-i18n="qs3_p">Эмулятор сам найдёт игру, загрузит аудиодрайвер и через пару секунд вы увидите заставку — как на настоящей приставке.</p></div></div>
+  </div>
+
+  <div class="section-gap">
+    <h2><span class="tag">&gt;</span> <span data-i18n="keys_h">Управление</span></h2>
+    <table class="keys">
+      <tr><td><kbd>←</kbd> <kbd>↑</kbd> <kbd>↓</kbd> <kbd>→</kbd></td><td data-i18n="keys1">Крестовина (D-pad)</td></tr>
+      <tr><td><kbd>Z</kbd> <kbd>X</kbd> <kbd>C</kbd></td><td data-i18n="keys2">Кнопки A / B / C</td></tr>
+      <tr><td><kbd>ENTER</kbd></td><td data-i18n="keys3">Start</td></tr>
+      <tr><td><kbd>F5</kbd> / <kbd>F7</kbd></td><td data-i18n="keys4">Сохранить / загрузить состояние игры</td></tr>
+      <tr><td><kbd>ESC</kbd></td><td data-i18n="keys5">Выход в меню прошивки (режим консоли восстанавливается)</td></tr>
+    </table>
+    <div class="callout"><b data-i18n="qs_note_b">Совет:</b> <span data-i18n="qs_note_p">проект отлично работает и в виртуальной машине (QEMU/OVMF) — можно попробовать без перезагрузки компьютера. Сборка из исходников — стандартный EDK II: пакет SegaEfiPkg собирается без стандартной библиотеки C.</span></div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p><span data-i18n="footer_p">SegaEFI · эмулятор Sega Mega Drive для UEFI · на базе ядра Genesis Plus GX</span></p>
+    <p class="pix"><span class="status-dot"></span>PRESS START · 2026</p>
+  </div>
+</footer>
+<button class="to-top" id="to-top" type="button" aria-label="Наверх" title="Наверх">↑</button>
+<div class="sr-only" id="live-status" aria-live="polite"></div>
+<script>
+/* ================= I18N ================= */
+const RU = {}; // Russian is baked into the HTML; captured on first load.
+const EN = {
+  skip:"Skip to content", copy:"Copy", copied:"Copied!", pause:"Pause background", play:"Play background", top:"Back to top",
+  nav_home:"Home", nav_about:"About", nav_features:"Features", nav_how:"How it works", nav_start:"Quick start",
+  hero_kicker:"UEFI \u00b7 RETRO \u00b7 V2.2",
+  hero_title:"A SEGA console inside your BIOS",
+  hero_lead:"SegaEFI is a Sega Mega Drive / Genesis emulator that starts before any operating system loads. No Windows, no Linux \u2014 just a computer, a USB stick and a game.",
+  hero_btn1:"How it works", hero_btn2:"Run it yourself",
+  stat_boot_num:"&lt; 5 sec",
+  stat_os:"operating systems required", stat_fps:"smooth video and audio", stat_cpu:"emulated CPUs: M68K + Z80", stat_boot:"from power-on to gameplay",
+  mission_h:"Goal and mission \u2014 in plain words",
+  mission1_h:"Goal", mission1_p:"Turn an ordinary computer into a game console before the operating system even begins to load. Press the power button \u2014 and a couple of seconds later you are in the game, just like on a real console from the 90s.",
+  mission2_h:"Mission", mission2_p:"Teach \u201cbare metal\u201d to do everything an OS normally does: draw graphics, play sound, read the keyboard and files. The project even ships its own audio driver \u2014 firmware simply doesn't have one.",
+  mission3_h:"Who it's for", mission3_p:"Retro gamers, collectors and engineers. The first get instant nostalgia with zero setup; the others get a living example of how firmware-level programming works.",
+  analogy_h:"In the simplest terms",
+  analogy1_h:"USB stick = cartridge", analogy1_p:"You copy the program and a game onto a regular USB stick and plug it into the computer \u2014 exactly like inserting a cartridge into a console back in the 90s.",
+  analogy2_h:"BIOS = console", analogy2_p:"Every modern computer contains a small built-in program \u2014 the UEFI firmware (successor of BIOS). It can run applications before any OS \u2014 and SegaEFI is exactly such an application: it turns the firmware into a console.",
+  about_kicker:"DESCRIPTION \u00b7 MEANING",
+  about_h:"What SegaEFI is",
+  about_lead:"SegaEFI is a complete emulator of the 16-bit Sega Mega Drive / Genesis console built as a UEFI application: it runs without any operating system, directly on top of the motherboard firmware. At its heart is the time-proven Genesis Plus GX core, ported to the EDK II environment without the C standard library.",
+  about1_h:"An engineering experiment", about1_p:"Firmware gives you almost nothing: no sound, no threads, no familiar libraries. The project shows that even under these constraints you can build a system with 60 FPS graphics and live audio.",
+  about2_h:"Preserving history", about2_p:"Games of the 90s are part of digital culture. SegaEFI gives them one more habitat: any x64 computer with UEFI becomes a \u201cbare-metal\u201d console with no extra layers.",
+  about3_h:"Educational value", about3_p:"The codebase is a ready-made textbook on systems programming: UEFI protocols, PCI, DMA, ring buffers and CPU emulation.",
+  why_hard_h:"Why this is hard",
+  hard1_h:"Firmware has no sound", hard1_p:"UEFI cannot play audio at all. That's why the project includes its own MyAudioDxe driver for Intel HD Audio cards: it finds the codec, configures it and streams sound via DMA.",
+  hard2_h:"No OS \u2014 no helpers", hard2_p:"No scheduler, no virtual memory, not even a sleep function. All timing \u2014 60 frames and ~800 ms of audio headroom \u2014 is maintained by the application itself, synchronised with the sound card's DMA position.",
+  fact_b:"Fact:", fact_p:"the entire emulator is a single file, SegaGenesis.efi. Put the game file game.gen next to it \u2014 and that's everything you need to play.",
+  feat_kicker:"FEATURES \u00b7 V2.2",
+  feat_h:"What SegaEFI can do",
+  f1_h:"Full console emulation", f1_p:"The Genesis Plus GX core: Motorola 68000 and Zilog Z80 CPUs, the VDP video chip, YM2612 and PSG sound chips \u2014 everything as in the original console.",
+  f2_h:"Its own audio driver", f2_p:"MyAudioDxe is an Intel HD Audio driver written from scratch: codec parsing, correct gain scaling based on amplifier capabilities, simultaneous multi-device output and automatic recovery from errors.",
+  f3_h:"Save states", f3_p:"Save and load the complete game state directly to the USB stick \u2014 stop at any moment and continue later from the very same frame.",
+  f4_h:"GameRamWatch", f4_p:"A game-memory watcher: it recognises the game by its ROM header and shows lives, rings and health in the status line. Ready-made profiles for Sonic 1 and Sonic 2.",
+  f5_h:"Careful video output", f5_p:"The picture scales to any monitor via the GOP protocol, and the screen layout (frame, status line, play field) is computed automatically. The console mode is restored on exit.",
+  f6_h:"Keyboard controls", f6_p:"Arrow keys \u2014 D-pad, Z/X/C \u2014 buttons A/B/C, Enter \u2014 Start. Both UEFI input protocols are supported \u2014 it works even on quirky laptops.",
+  feat_note_b:"New in V2.2:", feat_note_p:"an adaptive 48-frame (~800 ms) audio ring buffer \u2014 sound never stutters even in virtual machines where the audio timer moves in bursts; FIFOE/DESE error telemetry and automatic playback resync.",
+  how_kicker:"IMPLEMENTATION \u00b7 DIAGRAMS",
+  how_h:"How it works inside",
+  how_lead:"The three diagrams below show the whole journey: the overall system design, the life of a single game frame, and the path of sound from an emulated chip to your speakers.",
+  s1_h:"Architecture: system layers",
+  s1_sub:"Each layer only knows about its neighbour \u2014 like floors of a building. The game doesn't even suspect it isn't running on a real console.",
+  s1_l1:"Game (a .gen ROM file)", s1_l1s:"original 90s game code \u2014 not a single byte changed",
+  s1_l2:"EmulatorCore \u2014 the \u201cvirtual console\u201d", s1_l2s:"M68K + Z80 + the VDP video chip + YM2612/PSG sound (Genesis Plus GX core)",
+  s1_l3:"UefiGlue \u2014 the translator layer", s1_l3s:"translates emulator requests (draw a frame, play sound, read a file) into the language of the firmware",
+  s1_l4:"UEFI protocols + the MyAudioDxe driver", s1_l4s:"GOP (screen) \u00b7 SimpleFileSystem (USB stick) \u00b7 SimpleTextInEx (keyboard) \u00b7 GenericAudioIo (sound)",
+  s1_l5:"Hardware", s1_l5s:"graphics card \u00b7 Intel HDA sound controller \u00b7 USB drive \u00b7 keyboard",
+  s1_e1:"The game executes inside the emulator instruction by instruction, as if on a native 68000 CPU.",
+  s1_e2:"UefiGlue is the only place that \u201cknows\u201d about UEFI. Thanks to it the emulator core stayed almost untouched.",
+  s1_e3:"UEFI has no audio protocol \u2014 it is provided by the custom MyAudioDxe driver, which the emulator loads itself at startup.",
+  s2_h:"The life of one frame (1/60th of a second)",
+  s2_sub:"This loop repeats 60 times per second \u2014 faster than the blink of an eye.",
+  s2_n1:"Input", s2_n1s:"keyboard poll \u2192 gamepad buttons",
+  s2_n2:"Emulation", s2_n2s:"M68K and Z80 execute one frame of game code",
+  s2_n3:"Video", s2_n3s:"the VDP renders the frame \u2192 GOP puts it on screen",
+  s2_n4:"Sound", s2_n4s:"YM2612 + PSG \u2192 samples go to the ring buffer",
+  s2_n5:"Sync", s2_n5s:"waiting on the audio DMA position \u2192 a steady 60 FPS",
+  s2_e1:"Instead of an OS timer, the pace is set by the sound card itself: it consumes samples at a perfectly steady rate, and the main loop locks onto it.",
+  s2_e2:"Every few frames GameRamWatch peeks into the game's memory and refreshes the status line (lives, rings, level).",
+  s3_h:"The sound path: from a 1988 chip to your speakers",
+  s3_sub:"The hardest part of the project: UEFI has no audio, so the whole pipeline is built from scratch.",
+  s3_n1s:"emulation of the console's sound chips",
+  s3_n2:"Mixer", s3_n2s:"blip_buf mixes the channels into 48 kHz PCM samples",
+  s3_n3:"Ring buffer", s3_n3s:"48 frames (~800 ms) of headroom + an adaptive lead over DMA",
+  s3_n4:"HDA controller", s3_n4s:"reads the buffer from memory by itself, with no CPU involved",
+  s3_n5:"Codec \u2192 speakers", s3_n5s:"MyAudioDxe configures the codec's amplifiers and outputs",
+  s3_e1:"The emulator writes sound \u201cahead\u201d of the DMA read position. If the headroom shrinks, the lead grows automatically \u2014 crackling becomes impossible.",
+  s3_e2:"The driver watches for FIFOE/DESE errors and restarts playback within a fraction of a second \u2014 the player never notices.",
+  s3_e3:"Sound can go to several devices at once (up to 4): laptop speakers and headphones simultaneously.",
+  qs_kicker:"RUN IT \u00b7 3 STEPS",
+  qs_h:"Quick start",
+  qs1_h:"Prepare a USB stick", qs1_p:"Format a USB drive as FAT32 and copy two files onto it: the application and a game.",
+  qs2_h:"Boot from the stick", qs2_p:"When the computer starts, open the boot menu (usually F12, F11 or Esc) and choose the UEFI Shell or run the .efi file from the stick. No secret settings \u2014 just disable Secure Boot.",
+  qs3_h:"Play", qs3_p:"The emulator finds the game, loads the audio driver, and a couple of seconds later you see the title screen \u2014 just like on a real console.",
+  keys_h:"Controls",
+  keys1:"D-pad", keys2:"Buttons A / B / C", keys3:"Start", keys4:"Save / load game state", keys5:"Exit to the firmware menu (console mode is restored)",
+  qs_note_b:"Tip:", qs_note_p:"the project also runs great in a virtual machine (QEMU/OVMF) \u2014 you can try it without rebooting your computer. Building from source is standard EDK II: the SegaEfiPkg package builds without the C standard library.",
+  footer_p:"SegaEFI \u00b7 a Sega Mega Drive emulator for UEFI \u00b7 powered by the Genesis Plus GX core",
+  title:"SegaEFI \u2014 Sega Mega Drive straight from the BIOS"
+};
+RU.title = document.title;
+
+/* Capture baked-in Russian strings so we can switch back. */
+document.querySelectorAll('[data-i18n]').forEach(el => { RU[el.dataset.i18n] = el.innerHTML; });
+
+/* ================= PIXEL SCRAMBLE EFFECT ================= */
+const BLOCKS = '\u2588\u2593\u2592\u2591\u2596\u2597\u2598\u259a\u259b\u259c\u259d\u259e\u259f\u25aa\u25a0';
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function scrambleTo(el, finalHTML){
+  if (reduceMotion || /</.test(finalHTML)) { el.innerHTML = finalHTML; return; }
+  const finalText = finalHTML;
+  const len = Math.min(finalText.length, 90);
+  const steps = 9;
+  let step = 0;
+  clearInterval(el._pixTimer);
+  el._pixTimer = setInterval(() => {
+    step++;
+    const reveal = Math.floor(finalText.length * step / steps);
+    let out = '';
+    for (let i = 0; i < finalText.length; i++){
+      if (i < reveal || finalText[i] === ' ' || i > len) out += finalText[i];
+      else out += BLOCKS[(Math.random() * BLOCKS.length) | 0];
+    }
+    el.textContent = out;
+    if (step >= steps){ clearInterval(el._pixTimer); el.innerHTML = finalHTML; }
+  }, 34);
+}
+
+/* ================= LANGUAGE SWITCH ================= */
+let lang = 'ru';
+try { lang = localStorage.getItem('segaefi-lang') || 'ru'; } catch (_) {}
+
+function applyLang(next, animate){
+  lang = next;
+  try { localStorage.setItem('segaefi-lang', lang); } catch (_) {}
+  document.documentElement.lang = lang;
+  const dict = lang === 'en' ? EN : RU;
+  document.title = dict.title || RU.title;
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const val = dict[el.dataset.i18n];
+    if (val === undefined) return;
+    const visible = el.offsetParent !== null;
+    if (animate && visible) scrambleTo(el, val); else el.innerHTML = val;
+  });
+  document.querySelectorAll('.langbtn').forEach(b => { const active=b.dataset.lang===lang; b.classList.toggle('active',active); b.setAttribute('aria-pressed',String(active)); });
+  const vt=document.getElementById('video-toggle'); if(vt){ const paused=document.querySelector('.hero-bg video').paused; vt.setAttribute('aria-label',dict[paused?'play':'pause']||'Video'); vt.title=vt.getAttribute('aria-label'); }
+  const top=document.getElementById('to-top'); if(top){top.setAttribute('aria-label',dict.top||'Наверх');top.title=top.getAttribute('aria-label');}
+}
+
+document.querySelectorAll('.langbtn').forEach(b => {
+  b.addEventListener('click', () => { if (b.dataset.lang !== lang) applyLang(b.dataset.lang, true); });
+});
+
+/* ================= TABS ================= */
+function showTab(id, push=true){
+  const sec = document.getElementById('tab-' + id);
+  if (!sec) id='home';
+  const target=document.getElementById('tab-'+id);
+  document.querySelectorAll('section.tab').forEach(s => { const on=s===target; s.classList.toggle('visible',on); s.hidden=!on; });
+  document.querySelectorAll('.tabbtn').forEach(b => { const on=b.dataset.tab===id; b.classList.toggle('active',on); b.setAttribute('aria-selected',String(on)); b.tabIndex=on?0:-1; });
+  if(push && location.hash!=='#'+id) history.pushState({tab:id},'', '#'+id);
+  window.scrollTo({top:0,behavior:reduceMotion?'auto':'smooth'});
+  const dict = lang === 'en' ? EN : RU;
+  target.querySelectorAll('h1 [data-i18n], h2 [data-i18n], h1[data-i18n]').forEach(el => { const val=dict[el.dataset.i18n]; if(val!==undefined) scrambleTo(el,val); });
+}
+document.querySelectorAll('.tabbtn').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab,true)));
+document.getElementById('tabbar').addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight'].includes(e.key))return;const a=[...document.querySelectorAll('.tabbtn')],i=a.indexOf(document.activeElement),n=(i+(e.key==='ArrowRight'?1:-1)+a.length)%a.length;e.preventDefault();a[n].focus();showTab(a[n].dataset.tab,true)});
+window.addEventListener('popstate',()=>showTab((location.hash||'#home').slice(1),false));
+
+/* ================= INIT ================= */
+const startTab = (location.hash || '#home').slice(1);
+showTab(document.getElementById('tab-' + startTab) ? startTab : 'home', false);
+applyLang(lang === 'en' ? 'en' : 'ru', false);
+
+/* ================= MEDIA + UTILITIES ================= */
+const video=document.querySelector('.hero-bg video'), toggle=document.getElementById('video-toggle'), gameLabel=document.getElementById('game-label');
+function syncVideoUI(){const paused=video.paused;toggle.textContent=paused?'▶':'Ⅱ';const dict=lang==='en'?EN:RU;toggle.setAttribute('aria-label',dict[paused?'play':'pause']||(paused?'Воспроизвести фон':'Приостановить фон'));toggle.title=toggle.getAttribute('aria-label')}
+toggle.addEventListener('click',()=>video.paused?video.play().catch(()=>{}):video.pause());video.addEventListener('play',syncVideoUI);video.addEventListener('pause',syncVideoUI);
+video.addEventListener('timeupdate',()=>{gameLabel.textContent=video.currentTime<12?'THE LION KING · LIVE':'TINY TOON · LIVE'});
+video.play().catch(()=>{video.pause();syncVideoUI()});
+
+document.querySelectorAll('[data-copy]').forEach(btn=>btn.addEventListener('click',async()=>{const dict=lang==='en'?EN:RU;try{await navigator.clipboard.writeText(btn.dataset.copy)}catch(_){const t=document.createElement('textarea');t.value=btn.dataset.copy;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove()}const old=btn.innerHTML;btn.textContent=dict.copied||'Скопировано!';document.getElementById('live-status').textContent=btn.textContent;setTimeout(()=>btn.innerHTML=old,1400)}));
+const progress=document.getElementById('scroll-progress'),topBtn=document.getElementById('to-top');
+function onScroll(){const max=document.documentElement.scrollHeight-innerHeight,ratio=max>0?scrollY/max:0;progress.style.width=(ratio*100)+'%';topBtn.classList.toggle('show',scrollY>500)}
+addEventListener('scroll',onScroll,{passive:true});onScroll();topBtn.addEventListener('click',()=>scrollTo({top:0,behavior:reduceMotion?'auto':'smooth'}));
+
+/* Pause heavy media when the tab is hidden. */
+document.addEventListener('visibilitychange',()=>{if(document.hidden)video.pause();else if(!reduceMotion)video.play().catch(()=>{})});
+</script>
+</body>
+</html>
